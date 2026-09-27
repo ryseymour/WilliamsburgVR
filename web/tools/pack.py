@@ -19,6 +19,7 @@ with open(os.path.join(D, 'remaster.js'), 'w') as fh:
     fh.write('export const RM = ' + json.dumps(rm, separators=(',', ':')) + ';\n')
 with open(os.path.join(D, 'models.js'), 'w') as fh:
     fh.write('export default "' + base64.b64encode(lmk).decode() + '";\n')
+    fh.write('export const TREES = "' + base64.b64encode(gzip.compress(open(os.path.join(A, 'trees.glb'), 'rb').read(), 9, mtime=0)).decode() + '";\n')
     fh.write('export const CHIMNEYS = ' + open(os.path.join(A, 'chimneys.json')).read() + ';\n')
 art = {}
 for f in sorted(os.listdir(A)):

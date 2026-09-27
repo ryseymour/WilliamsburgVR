@@ -202,6 +202,7 @@ async function buildTown() {
     g.position.set(t.x, heightAt(t.x, t.z), t.z);
     g.rotation.y = -t.r;
     g.scale.set(t.w, t.h, t.w);
+    g.userData.kind = t.p;
     scene.add(g);
     treeGroups.push(g);
   }
@@ -543,7 +544,7 @@ addEventListener('resize', resize);
     try {
       rm = await createRemaster({
         scene, renderer, camera, WORLD, heightAt, sun, hemi, sky,
-        town: townRoot, terrain: terrainMesh, trees: treeGroups, flagParts,
+        town: townRoot, terrain: terrainMesh, trees: treeGroups, flagParts, stops: STOPS, art: ART,
         landmarkNodes: ['lmchurch', 'lmcourthouse', 'lmmagazine', 'lmrandolph', 'lmhouses'].map((n) => townRoot.getObjectByName(n)).filter(Boolean),
         roadMeshes: walkMeshes,
         setOldSmoke: (on) => (chimneySmoke = on),
@@ -567,4 +568,4 @@ addEventListener('resize', resize);
   requestAnimationFrame(frame);
 })();
 
-window.__wb = { scene, camera, player, goTo, STOPS, WORLD, setEra, get rm() { return rm; }, get current() { return current; } };
+window.__wb = { THREE, scene, camera, player, goTo, STOPS, WORLD, setEra, get rm() { return rm; }, get current() { return current; } };

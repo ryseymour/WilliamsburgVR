@@ -7,6 +7,8 @@
 //     original models need no new UVs)
 //   - the church, courthouse, magazine and Randolph house rebuilt in Blender
 //     (tools/build-landmarks.py) in place of the 2018 models
+//   - grown oaks, elms and boxwood (tools/build-trees.py) in place of the
+//     stock 2018 palms, and lettered wayside panels in place of the sign boxes
 //   - an atmospheric sky with drifting clouds that also lights the scene
 //   - sandy oyster-shell streets painted into the ground, wind-blown grass,
 //     swaying trees, chimney smoke from every chimney, birds and dust motes
@@ -21,13 +23,14 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RM } from './data/remaster.js';
-import MODELS, { CHIMNEYS } from './data/models.js';
+import MODELS, { CHIMNEYS, TREES } from './data/models.js';
 
 const loader = new THREE.TextureLoader();
 const b64buf = (s) => { const bin = atob(s); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a.buffer; };
+const inflate = (s) => new Response(new Blob([b64buf(s)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
 
 export async function createRemaster(ctx) {
-  const { scene, renderer, camera, WORLD, heightAt, sun, hemi, sky: oldSky, town, terrain, trees, landmarkNodes, roadMeshes, flagParts } = ctx;
+  const { scene, renderer, camera, WORLD, heightAt, sun, hemi, sky: oldSky, town, terrain, trees, landmarkNodes, roadMeshes, flagParts, stops = [], art = {} } = ctx;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
   const coarse = matchMedia('(pointer: coarse)').matches;
 
@@ -112,29 +115,31 @@ export async function createRemaster(ctx) {
     paint: triplanar({ tex: 'paint', scale: 1.5, tint: '#f4f1ea', roughness: 0.75, side: THREE.DoubleSide }),
     shutter: triplanar({ tex: 'paint', scale: 1.5, tint: '#2c3a30', roughness: 0.6, side: THREE.DoubleSide }),
     door: triplanar({ tex: 'wood', scale: 1.2, tint: '#6a4a36', roughness: 0.7, side: THREE.DoubleSide }),
-    canvas: triplanar({ tex: 'canvas', scale: 1.5, roughness: 1, side: THREE.DoubleSide }),
+    canvas: triplanar({ tex: 'canvas', scale: 1.5, tint: '#d8cfb9', roughness: 1, side: THREE.DoubleSide }),
     stone: triplanar({ tex: 'stone', scale: 1.2, roughness: 1 }),
     glass: new THREE.MeshPhysicalMaterial({ color: '#1d2527', roughness: 0.04, metalness: 0.0, reflectivity: 0.6, envMapIntensity: 1.6, side: THREE.DoubleSide }),
     dark: new THREE.MeshStandardMaterial({ color: '#141210', roughness: 0.9, side: THREE.DoubleSide }),
     lead: new THREE.MeshStandardMaterial({ color: '#8d9594', roughness: 0.45, metalness: 0.7, side: THREE.DoubleSide }),
     gilt: new THREE.MeshStandardMaterial({ color: '#d6ad52', roughness: 0.25, metalness: 1 }),
-    iron: new THREE.MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.5, metalness: 0.8 }),
+    iron: new THREE.MeshStandardMaterial({ color: '#1d1e1f', roughness: 0.6, metalness: 0.35 }),
   };
 
+  M.postPaint = triplanar({ tex: 'paint', scale: 1.5, tint: '#26282a', roughness: 0.6 });
+  M.ironBlack = new THREE.MeshStandardMaterial({ color: '#1b1c1d', roughness: 0.55, metalness: 0.6 });
   // 2018 material name -> remastered material (unlisted ones keep their look)
   const REMAP = {
     'brick': M.brick, 'brick 2': M.brick, 'brick 3': M.brick, 'New Material 2': M.brick,
     'Siding': M.clapWhite, 'Siding 1': M.clapRed, 'Siding 2': M.clapBlue, 'Siding 3': M.clapSage, 'Siding 4': M.clapBrown,
     'Material_007': M.clapOchre,
-    'shingles': M.shingle, 'Material_003': M.shingle, 'Material.003': M.shingle,
-    'T19_Dark_Chocolate': M.fence, 'cherry': M.wood, 'Material.001': M.wood, 'Material_002': M.wood,
+    'shingles': M.shingle, 'Material_003': M.shingle, 'Material.003': M.ironBlack,
+    'T19_Dark_Chocolate': M.fence, 'cherry': M.postPaint, 'Material.001': M.wood, 'Material_002': M.wood,
     'Material.006': M.wood, 'Material.007': M.wood, 'woodpanel': M.boards,
     'New Material 1': M.paint, 'Material.001 Diffuse Color': M.paint, 'Material.002': M.paint,
     'Material.009': M.paint, 'Default-Material': M.paint,
     'Material': M.shutter,
     'Material.008': M.glass, 'glassMaterial': M.glass, 'glassMaterial 1': M.glass, 'Material.004': M.glass,
     'Material.005': M.iron, 'black': M.dark,
-    'No Name': M.canvas, 'grey.gravestone': M.stone,
+    'No Name': M.canvas, 'hourse': null, 'grey.gravestone': M.stone,
   };
   M.shutterWhite = triplanar({ tex: 'paint', scale: 1.5, tint: '#ece8de', roughness: 0.7, side: THREE.DoubleSide });
   M.shutterRed = triplanar({ tex: 'paint', scale: 1.5, tint: '#5e231c', roughness: 0.6, side: THREE.DoubleSide });
@@ -148,8 +153,7 @@ export async function createRemaster(ctx) {
   };
 
   // ------------------------------------------------------------ landmarks
-  const glb = await new Response(new Blob([b64buf(MODELS)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-  const lm = (await new GLTFLoader().parseAsync(glb, '')).scene;
+  const lm = (await new GLTFLoader().parseAsync(await inflate(MODELS), '')).scene;
   lm.traverse((o) => {
     if (!o.isMesh) return;
     o.material = LMAP[o.material.name] || M.paint;
@@ -159,13 +163,97 @@ export async function createRemaster(ctx) {
   lm.visible = false;
   scene.add(lm);
 
+  // ------------------------------------------------------------ wayside signs
+  // The 2018 boards were big white boxes with the photo pasted on one face.
+  // In their place: painted wayside panels on two posts, lettered like the
+  // real Colonial Williamsburg markers, each facing the spot the tour stands.
+  const signGroup = new THREE.Group(); signGroup.visible = false; scene.add(signGroup);
+  const oldSigns = [];
+  town.traverse((o) => { if (o.isMesh && /sign|church2material/i.test(o.material.name)) oldSigns.push(o); });
+  // the 2018 sign posts are merged into shared town meshes; give those meshes a
+  // copy without the triangles that stand on a sign's footprint
+  const signPts = Object.values(WORLD.signs).map((sg) => [sg.pos[0], sg.pos[2]]);
+  const postless = [];
+  town.traverse((o) => {
+    if (!o.isMesh || oldSigns.includes(o) || landmarkNodes.some((n) => n === o || o.parent === n)) return;
+    const g = o.geometry, pos = g.attributes.position, idx = g.index;
+    if (!idx) return;
+    const v = new THREE.Vector3(), near = new Uint8Array(pos.count);
+    let any = false;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (signPts.some(([x, z]) => Math.hypot(v.x - x, v.z - z) < 0.45)) { near[i] = 1; any = true; }
+    }
+    if (!any) return;
+    const keep = [];
+    for (let i = 0; i < idx.count; i += 3) {
+      const a = idx.getX(i), b = idx.getX(i + 1), c = idx.getX(i + 2);
+      if (!(near[a] && near[b] && near[c])) keep.push(a, b, c);
+    }
+    if (keep.length === idx.count) return;
+    const ng = g.clone(); ng.setIndex(keep);
+    postless.push([o, g, ng]);
+  });
+  const postMat = triplanar({ tex: 'paint', scale: 1.5, tint: '#3a3128', roughness: 0.7 });
+  const loadImg = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+  function wrap(g, text, x, y, w, lh, maxY) {
+    const words = text.split(' '); let line = '';
+    for (const wd of words) {
+      const t = line ? line + ' ' + wd : wd;
+      if (g.measureText(t).width > w && line) { if (y + lh > maxY) { g.fillText(line + '…', x, y); return; } g.fillText(line, x, y); line = wd; y += lh; } else line = t;
+    }
+    g.fillText(line, x, y);
+  }
+  for (const st of stops) {
+    const sg = WORLD.signs[st.sign], site = WORLD.sites[st.site];
+    if (!sg || !site) continue;
+    const c = document.createElement('canvas'); c.width = 1400; c.height = 900;
+    const g = c.getContext('2d');
+    g.fillStyle = '#2d2620'; g.fillRect(0, 0, 1400, 900);
+    g.strokeStyle = '#c9b68a'; g.lineWidth = 6; g.strokeRect(26, 26, 1348, 848);
+    g.fillStyle = '#efe4c8'; g.font = '600 76px Georgia, "Times New Roman", serif'; g.fillText(st.title, 70, 138);
+    g.fillStyle = '#c9b68a'; g.font = '30px Georgia, serif'; g.fillText(st.sub.toUpperCase(), 72, 190);
+    g.fillRect(70, 215, 1260, 3);
+    const img = await loadImg(art[st.photo]);
+    if (img) {
+      const w = 620, h = Math.min(560, w * img.height / img.width);
+      g.filter = 'sepia(0.35) contrast(1.05)'; g.drawImage(img, 70, 250, w, h); g.filter = 'none';
+      g.strokeStyle = '#c9b68a'; g.lineWidth = 3; g.strokeRect(70, 250, w, h);
+    }
+    g.fillStyle = '#efe4c8'; g.font = 'italic 31px Georgia, serif';
+    wrap(g, '\u201c' + st.text + '\u201d', 730, 278, 600, 42, 790);
+    g.fillStyle = '#c9b68a'; g.font = '26px Georgia, serif'; g.fillText('\u2014 ' + st.credit, 730, 836);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = maxAniso;
+    const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.12 });
+    const [lo, hi] = sg.box, cx = (lo[0] + hi[0]) / 2, cz = (lo[2] + hi[2]) / 2, gy = heightAt(cx, cz);
+    const W = 2.8, H = W * 900 / 1400, base = 1.05;
+    const s = new THREE.Group();
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.06), [postMat, postMat, postMat, postMat, face, postMat]);
+    panel.position.y = base + H / 2;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(W + 0.16, H + 0.16, 0.05), postMat);
+    back.position.set(0, base + H / 2, -0.05);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(W + 0.36, 0.08, 0.3), postMat);
+    cap.position.y = base + H + 0.12;
+    s.add(panel, back, cap);
+    for (const x of [-W / 2 - 0.02, W / 2 + 0.02]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.16, base + H + 0.3, 0.16), postMat);
+      p.position.set(x, (base + H + 0.3) / 2 - 0.2, -0.12); s.add(p);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), postMat);
+      ball.position.set(x, base + H + 0.26, -0.12); s.add(ball);
+    }
+    s.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+    s.position.set(cx, gy, cz);
+    s.rotation.y = Math.atan2(site.pos ? site.pos[0] - cx : site[0] - cx, site.pos ? site.pos[2] - cz : site[2] - cz);
+    signGroup.add(s);
+  }
+
   // ------------------------------------------------------------ sky & light
   const skyObj = new Sky();
   skyObj.scale.setScalar(4000);
   const su = skyObj.material.uniforms;
-  su.turbidity.value = 4.5; su.rayleigh.value = 1.4; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.82;
+  su.turbidity.value = 3.2; su.rayleigh.value = 1.6; su.mieCoefficient.value = 0.003; su.mieDirectionalG.value = 0.82;
   // late afternoon, sun in the south-west
-  const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 24), THREE.MathUtils.degToRad(-128));
+  const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 32), THREE.MathUtils.degToRad(-128));
   su.sunPosition.value.copy(sunDir);
   skyObj.visible = false;
   scene.add(skyObj);
@@ -204,12 +292,12 @@ export async function createRemaster(ctx) {
   envScene.add(envSky);
   const envTex = pmrem.fromScene(envScene, 0.02).texture;
 
-  const fogRemaster = new THREE.FogExp2(new THREE.Color('#bccbd6'), 0.0019);
+  const fogRemaster = new THREE.FogExp2(new THREE.Color('#b3c5d6'), 0.0013);
 
   // ------------------------------------------------------------ terrain
   const grass = set('grass'), street = set('street');
   const roadMask = loader.load(RM.roadmask); roadMask.flipY = false; roadMask.colorSpace = THREE.NoColorSpace;
-  const terrainMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.6 });
+  const terrainMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.95 });
   terrainMat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, { gA: { value: grass.albedo }, gN: { value: grass.normal }, sA: { value: street.albedo }, sN: { value: street.normal }, sO: { value: street.orm }, road: { value: roadMask } });
     sh.vertexShader = sh.vertexShader
@@ -235,6 +323,12 @@ export async function createRemaster(ctx) {
         float rm = smoothstep(0.25, 0.65, r + (edgeN - .5) * .45);
         vec2 sp = vWP.xz / 3.2;
         vec3 scol = texture2D(sA, sp).rgb * mix(.92, 1.06, fb(vWP.xz*.08));
+        // crushed shell and pebbles: fine speckle that fades out with distance
+        float dcam = length(vWP - cameraPosition);
+        float grit = mix(.84, 1.14, vn(vWP.xz * 11.)) * mix(.9, 1.1, vn(vWP.xz * 43.));
+        scol *= mix(grit, 1., smoothstep(12., 45., dcam));
+        // wheel ruts: two darker, smoother tracks where the mask is strongest
+        scol *= 1. - smoothstep(.85, 1., r) * .08 * vn(vWP.xz * .5 + 3.);
         // worn verge between street and grass
         vec3 verge = mix(gcol, scol * vec3(.85,.8,.72), .55);
         vec3 col = mix(gcol, verge, smoothstep(0.05, 0.35, r + (edgeN-.5)*.3) * (1. - rm));
@@ -328,9 +422,46 @@ export async function createRemaster(ctx) {
     grassGroup.add(im); chunks.push(im);
   }
 
+  // ------------------------------------------------------------ trees
+  // The 2018 SpeedTree palms and broadleafs give way to grown deciduous trees
+  // (tools/build-trees.py): spreading oaks, vase-shaped elms, small ornamentals
+  // and clipped boxwood, each fitted to the height of the tree it replaces.
+  const treeSrc = (await new GLTFLoader().parseAsync(await inflate(TREES), '')).scene;
+  const kinds = {};
+  const leafMats = [];
+  treeSrc.children.slice().forEach((n) => {
+    const k = n.name.replace(/^tree_/, '').replace(/\d+$/, '');
+    n.userData.h = new THREE.Box3().setFromObject(n).max.y;
+    n.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material;
+      m.vertexColors = true;
+      if (/leaves/.test(m.name)) { m.alphaTest = 0.5; m.side = THREE.DoubleSide; m.roughness = 0.75; m.envMapIntensity = 0.7; leafMats.includes(m) || leafMats.push(m); o.userData.leaves = true; }
+      else { m.roughness = 0.95; m.envMapIntensity = 0.5; }
+    });
+    (kinds[k] ||= []).push(n);
+  });
+  const newTrees = new THREE.Group(); newTrees.visible = false; scene.add(newTrees);
+  const leafMeshes = [];
+  const hash = (x, z) => { const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453; return v - Math.floor(v); };
+  trees.forEach((g) => {
+    const box = new THREE.Box3().setFromObject(g), h = box.max.y - box.min.y;
+    const r = hash(g.position.x, g.position.z), kindOf = g.userData.kind || '';
+    const k = /bush/.test(kindOf) ? 'box' : /Desktop/.test(kindOf) ? (r < 0.8 ? 'oak' : 'elm') : (r < 0.45 ? 'elm' : r < 0.8 ? 'oak' : 'round');
+    const src = kinds[k][Math.floor(hash(g.position.z, g.position.x) * kinds[k].length)];
+    const t = src.clone();
+    const sc = THREE.MathUtils.clamp(h / src.userData.h, 0.75, 1.35) * (0.92 + r * 0.16);
+    t.scale.setScalar(sc);
+    t.position.copy(g.position).y -= 0.05;
+    t.rotation.y = r * Math.PI * 2;
+    t.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.userData.leaves) leafMeshes.push(o); } });
+    newTrees.add(t);
+  });
+
   // ------------------------------------------------------------ trees sway
   const treeMats = new Set();
   trees.forEach((g) => g.traverse((o) => { if (o.isMesh) treeMats.add(o.material); }));
+  newTrees.traverse((o) => { if (o.isMesh) treeMats.add(o.material); });
   treeMats.forEach((m) => {
     const prev = m.onBeforeCompile;
     m.onBeforeCompile = (sh, r) => {
@@ -452,7 +583,7 @@ export async function createRemaster(ctx) {
     composer.addPass(gtao);
     // keep see-through things (clouds, smoke, motes) out of the occlusion pass
     const gtaoRender = gtao.render.bind(gtao);
-    const skip = () => [clouds, smokeGroup, motes, birds, skyObj];
+    const skip = () => [clouds, smokeGroup, motes, birds, skyObj, ...leafMeshes];
     gtao.render = (...a) => {
       const vis = skip().map((o) => o.visible);
       skip().forEach((o) => (o.visible = false));
@@ -494,13 +625,16 @@ export async function createRemaster(ctx) {
     landmarkNodes.forEach((n) => (n.visible = false));
     roadMeshes.forEach((m) => (m.visible = false));
     lm.visible = true;
+    trees.forEach((g) => (g.visible = false)); newTrees.visible = true;
+    oldSigns.forEach((o) => (o.visible = false)); signGroup.visible = true;
+    postless.forEach(([o, , ng]) => (o.geometry = ng));
     terrain.material = terrainMat;
     Object.assign(saved, { fog: scene.fog, env: scene.environment, exp: renderer.toneMappingExposure, sunI: sun.intensity, sunC: sun.color.clone(), hemiI: hemi.intensity, shadow: sun.shadow.mapSize.x });
     scene.fog = fogRemaster;
     scene.environment = envTex;
     renderer.toneMappingExposure = 0.72;
     sun.color.set('#ffe2b8'); sun.intensity = 3.6;
-    hemi.intensity = 0.35;
+    hemi.intensity = 0.55;
     oldSky.visible = false; skyObj.visible = true; clouds.visible = true;
     grassGroup.visible = true; smokeGroup.visible = true; birds.visible = true; motes.visible = true;
     ctx.setOldSmoke(false);
@@ -515,6 +649,9 @@ export async function createRemaster(ctx) {
     landmarkNodes.forEach((n) => (n.visible = true));
     roadMeshes.forEach((m) => (m.visible = true));
     lm.visible = false;
+    trees.forEach((g) => (g.visible = true)); newTrees.visible = false;
+    oldSigns.forEach((o) => (o.visible = true)); signGroup.visible = false;
+    postless.forEach(([o, g]) => (o.geometry = g));
     terrain.material = terrainOrig;
     scene.fog = saved.fog; scene.environment = saved.env;
     renderer.toneMappingExposure = saved.exp;

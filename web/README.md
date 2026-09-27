@@ -63,6 +63,14 @@ at any moment, from the same spot.
   panelled doors and fanlights sit back in their reveals. Roofs are laid shingle by
   shingle, and the eaves carry modillion and dentil cornices. There are open shutters,
   dormers and corbelled chimney caps.
+- **Real trees.** The 2018 build used stock SpeedTree palms, which are the wrong species
+  for Tidewater Virginia and turn to noise up close. `tools/build-trees.py` grows
+  spreading oaks, vase-shaped elms, small ornamentals and clipped boxwood instead. They
+  have branching bark trunks and leaf-cluster foliage, and each one is fitted to the
+  height of the tree it replaces.
+- **Wayside signs.** The white sign boxes are replaced by dark painted panels on posts,
+  lettered with the stop's title, photo and quote, and turned to face the spot where the
+  tour stands.
 - **Atmosphere.** A physically based sky with drifting clouds lights the scene through
   an environment map, so glass and metal reflect it. It also adds distance haze, a warm
   late-afternoon sun with sharper shadows that follow you, ambient occlusion, gentle bloom
@@ -80,6 +88,7 @@ python3 web/tools/export-scene.py        # unpacks Build/, writes web/assets/
 npx @gltf-transform/cli quantize web/assets/town.glb web/assets/town.glb
 python3 web/tools/make-textures.py       # PBR sets for the remaster, web/assets/rm/
 python3 web/tools/build-landmarks.py     # Blender (bpy) models of the landmarks and houses
+python3 web/tools/build-trees.py         # oaks, elms, ornamentals and boxwood (writes trees.glb)
 npx @gltf-transform/cli quantize web/assets/landmarks.glb web/assets/landmarks.glb
 python3 web/tools/pack.py                # writes web/data/*.js (base64, gzip for the town)
 ```
