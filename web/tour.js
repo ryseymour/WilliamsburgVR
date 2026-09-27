@@ -204,15 +204,27 @@ async function buildTown() {
 
 // ---------------------------------------------------------------- flag, smoke, dust
 let flag, flagBase;
+const FLAG_H = 1.5, MAST = 6.5;
 function buildFlag() {
+  // The build's cloth flag hangs off a 2 m stub on the courthouse roof and its
+  // pole is a 9 cm cylinder you can barely see, so give it a proper mast.
   const pole = WORLD.flag.pole;
-  const g = new THREE.PlaneGeometry(3.0, 1.9, 24, 12);
-  g.translate(1.5, 0, 0);
+  const base = pole[1] - 1.11;
+  const wood = new THREE.MeshStandardMaterial({ color: '#e9e4d8', roughness: 0.6 });
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, MAST, 12), wood);
+  mast.position.set(pole[0], base + MAST / 2, pole[2]);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), new THREE.MeshStandardMaterial({ color: '#c9a24a', metalness: 0.8, roughness: 0.3 }));
+  ball.position.set(pole[0], base + MAST + 0.08, pole[2]);
+  mast.castShadow = ball.castShadow = true;
+  scene.add(mast, ball);
+
+  const g = new THREE.PlaneGeometry(FLAG_H * 1.6, FLAG_H, 24, 12);
+  g.translate(FLAG_H * 0.8 + 0.05, -FLAG_H / 2, 0);
   flagBase = g.attributes.position.array.slice();
   const m = new THREE.MeshStandardMaterial({ map: tex('flag'), side: THREE.DoubleSide, roughness: 0.9 });
   flag = new THREE.Mesh(g, m);
   flag.castShadow = true;
-  flag.position.set(pole[0], pole[1] + 4.2, pole[2]);
+  flag.position.set(pole[0], base + MAST - 0.15, pole[2]);
   flag.rotation.y = Math.PI * 0.62;
   scene.add(flag);
 }
@@ -220,9 +232,9 @@ function waveFlag(t) {
   const p = flag.geometry.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = flagBase[i * 3], y = flagBase[i * 3 + 1];
-    const k = x / 3;
+    const k = x / (FLAG_H * 1.6);
     p.setZ(i, Math.sin(x * 2.2 - t * 5 + y * 0.4) * 0.28 * k + Math.sin(x * 4.1 - t * 7.3) * 0.06 * k);
-    p.setY(i, y - k * k * 0.25);
+    p.setY(i, y - k * k * 0.12);
   }
   p.needsUpdate = true;
   flag.geometry.computeVertexNormals();

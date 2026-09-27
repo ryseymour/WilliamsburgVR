@@ -187,6 +187,16 @@ def prim(pos, nrm, uv, idx, mi):
             'indices': acc(idx.reshape(-1).astype(np.uint32 if big else np.uint16), 'SCALAR', 5125 if big else 5123),
             'material': mi}
 
+_td = next(o for o in SA.objects.values() if o.type.name == 'TerrainData').read_typetree()['m_Heightmap']
+_W = _td['m_Width']; _sc = _td['m_Scale']
+_H = np.array(_td['m_Heights'], dtype=np.float64).reshape(_W, _W) / 32766 * _sc['y']
+def ground(x, z):
+    # terrain height at three.js (x, z); Unity x = -x
+    u = np.clip(-x / _sc['x'], 0, _W - 1.001); v = np.clip(z / _sc['z'], 0, _W - 1.001)
+    x0 = np.floor(u).astype(int); z0 = np.floor(v).astype(int); fx = u - x0; fz = v - z0
+    h = lambda xx, zz: _H[zz, xx]
+    return (h(x0, z0) * (1 - fx) + h(x0 + 1, z0) * fx) * (1 - fz) + (h(x0, z0 + 1) * (1 - fx) + h(x0 + 1, z0 + 1) * fx) * fz
+
 def cluster(pos, idx, cell):
     # The roads are Blender bezier strips with millions of tiny faces; they are
     # flat, so merging vertices on a grid keeps their shape at a fraction of the size.
@@ -202,6 +212,12 @@ for mi, (P, Nn, U, I, _) in groups.items():
     P, Nn, U, I = np.vstack(P), np.vstack(Nn), np.vstack(U), np.vstack(I)
     if materials[mi]['name'] == 'road.1':
         P, I = cluster(P, I, 0.6)
+        # In the build the roads are thick slabs floating up to a metre above the
+        # grass. Keep only their top faces and lay them on the terrain.
+        a, b, c = P[I[:, 0]], P[I[:, 1]], P[I[:, 2]]
+        n = np.cross(b - a, c - a); ln = np.linalg.norm(n, axis=1)
+        I = I[n[:, 1] > 0.5 * np.maximum(ln, 1e-12)]
+        P = P.copy(); P[:, 1] = ground(P[:, 0], P[:, 2]) + 0.05
         Nn = np.tile([0.0, 1, 0], (len(P), 1)); U = np.c_[P[:, 0], P[:, 2]] / 6.0
     prims.append(prim(P, Nn, U, I, mi))
 meshes.append({'name': 'town', 'primitives': prims}); nodes.append({'name': 'town', 'mesh': 0})
