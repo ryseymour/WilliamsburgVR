@@ -78,6 +78,13 @@ kbd { font-family: inherit; font-size: 12px; padding: 1px 6px; border-radius: 3p
 .tool { background: var(--glass); color: var(--glass-ink); border: 0; border-radius: 999px; padding: 8px 14px; font-size: 13.5px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .tool[aria-pressed="false"] { opacity: .7; }
 .tools { display: flex; gap: 8px; }
+.era { display: flex; padding: 3px; gap: 2px; background: var(--glass); border-radius: 999px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.era button { border: 0; background: transparent; color: var(--glass-ink); border-radius: 999px; padding: 5px 12px; font-size: 13px; opacity: .75; white-space: nowrap; }
+.era button[aria-pressed="true"] { background: var(--oxblood); opacity: 1; }
+.era button:disabled { cursor: progress; }
+#wb-title .era { background: var(--paper-2); display: inline-flex; margin-top: 12px; }
+#wb-title .era button { color: var(--ink); }
+#wb-title .era button[aria-pressed="true"] { color: #fff7ea; }
 
 /* info panel, like the original's Canvas Info1..Info4 */
 #wb-panel { position: absolute; right: 16px; bottom: 16px; width: min(400px, calc(100% - 32px)); max-height: calc(100% - 90px); overflow: auto;
@@ -139,12 +146,13 @@ kbd { font-family: inherit; font-size: 12px; padding: 1px 6px; border-radius: 3p
   <div class="hud">
     <div class="pill"><b>Colonial Williamsburg</b><span id="wb-count"></span><div id="wb-dots"></div></div>
     <div class="tools">
+      <div class="era" role="group" aria-label="Version (V)"><button data-era="2018" aria-pressed="false" title="The 2018 build as it shipped (V)">2018</button><button data-era="rm" aria-pressed="true" title="Remastered (V)">Remastered</button></div>
       <button class="tool" id="wb-info" title="Show the sign for this stop (I)">About this stop</button>
       <button class="tool" id="wb-sound" aria-pressed="true" title="Fife and drum music (M)">Music on</button>
     </div>
   </div>
 
-  <div class="hint">Drag to look · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk · <kbd>Space</kbd> next stop</div>
+  <div class="hint"><kbd>V</kbd> 2018 / remastered · Drag to look · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk · <kbd>Space</kbd> next stop</div>
 
   <div id="wb-panel" role="dialog" aria-labelledby="wb-ptitle">
     <button id="wb-close" aria-label="Close">×</button>
@@ -174,7 +182,8 @@ kbd { font-family: inherit; font-size: 12px; padding: 1px 6px; border-radius: 3p
           <button class="btn" id="wb-begin" disabled>Begin the tour</button>
           <span id="wb-load">Loading…</span>
         </div>
-        <p class="keys">The original asked you to <i>tap the headset to jump to new locations</i>. Here, press <kbd>Space</kbd> or <b>Next stop</b> to jump, drag to look around, and walk with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (hold <kbd>Shift</kbd> to hurry).</p>
+        <div class="era" role="group" aria-label="Version"><button data-era="2018" aria-pressed="false">2018 original</button><button data-era="rm" aria-pressed="true">Remastered</button></div>
+        <p class="keys">Press <kbd>V</kbd> at any time to flip between the 2018 original and the remaster. The original asked you to <i>tap the headset to jump to new locations</i>. Here, press <kbd>Space</kbd> or <b>Next stop</b> to jump, drag to look around, and walk with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (hold <kbd>Shift</kbd> to hurry).</p>
       </div>
     </div>
   </div>

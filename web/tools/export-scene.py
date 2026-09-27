@@ -122,8 +122,8 @@ def material(pptr):
     return mat_index[key]
 
 # --- collect scene meshes --------------------------------------------------
-groups = {}  # material idx -> [pos, nrm, uv, idx]
-def add(mi, uvx, V, N, UV, T, M):
+groups = {}  # (landmark or None, material idx) -> [pos, nrm, uv, idx]
+def add(mi, uvx, V, N, UV, T, M, lm=None):
     Mw = FLIP @ M
     Vw = (np.c_[V, np.ones(len(V))] @ Mw.T)[:, :3]
     if N is not None:
@@ -134,10 +134,24 @@ def add(mi, uvx, V, N, UV, T, M):
     used = np.unique(T); remap = -np.ones(len(V), dtype=np.int64); remap[used] = np.arange(len(used))
     tri = remap[T]
     if np.linalg.det(Mw[:3, :3]) < 0: tri = tri[:, ::-1]  # keep front faces front
-    g = groups.setdefault(mi, [[], [], [], [], 0])
+    g = groups.setdefault((lm, mi), [[], [], [], [], 0])
     g[0].append(Vw[used]); g[1].append(Nw[used]); g[2].append(UVw[used]); g[3].append(tri + g[4]); g[4] += len(used)
 
-skipped = []
+# The four tour landmarks go into their own nodes so the remastered edition can
+# swap them for rebuilt models. Picked by name/parent and position.
+def landmark(name, par, c):
+    x, y, z = -c[0], c[1], c[2]
+    if par == 'wbchruch' and -170 < x < -157 and 284 < z < 304 and name not in ('ch.003', 'ch.004', 'ch.005'):
+        return 'church'
+    if par == 'courthouse (1)' and z < 300:
+        return 'courthouse'
+    if par in ('armory', 'armory (1)') or name in ('ch.door.001', 'ch.window.001 (15)') or par.startswith('Modular Window'):
+        return 'magazine'
+    if -160 < x < -154.3 and 220 < z < 237 and y > 2 and par not in ('well', 'lamppost2 (5)'):
+        return 'randolph'
+    return None
+
+skipped, chimneys = [], []
 for pid, o in LVL.objects.items():
     if o.type.name != 'MeshRenderer': continue
     r = o.read()
@@ -159,10 +173,14 @@ for pid, o in LVL.objects.items():
     lo, hi = Vw.min(0), Vw.max(0)
     if hi[1] < -1 or lo[0] > 520 or hi[0] < -20 or lo[2] > 520 or hi[2] < -20:
         skipped.append(f'{name}@{tr[parent[tpid]].m_GameObject.read().m_Name if parent[tpid] else "-"} y{hi[1]:.0f} x{lo[0]:.0f}..{hi[0]:.0f} z{lo[2]:.0f}'); continue
+    par = tr[parent[tpid]].m_GameObject.read().m_Name if parent[tpid] else '-'
+    lm = landmark(name, par, (lo + hi) / 2)
+    if 'chimney' in name.lower() and not lm:
+        chimneys.append([round(-(lo[0] + hi[0]) / 2, 2), round(float(hi[1]), 2), round((lo[2] + hi[2]) / 2, 2)])
     for i, T in enumerate(subs):
         if i >= len(r.m_Materials) or not r.m_Materials[i].path_id: continue
         mi, uvx = material(r.m_Materials[i])
-        add(mi, uvx, V, N, UV, T, M)
+        add(mi, uvx, V, N, UV, T, M, lm)
 print('skipped off-map objects:', sorted(set(skipped)))
 
 # --- glTF writer -----------------------------------------------------------
@@ -207,8 +225,11 @@ def cluster(pos, idx, cell):
     key = np.sort(t, axis=1); _, keep = np.unique(key, axis=0, return_index=True); t = t[np.sort(keep)]
     return pos[first], t
 
-prims = []
-for mi, (P, Nn, U, I, _) in groups.items():
+from PIL import ImageDraw, ImageFilter
+ROAD_RES = 2048  # road mask over the whole 500 m terrain, ~0.25 m per pixel
+road_mask = Image.new('L', (ROAD_RES, ROAD_RES), 0); road_draw = ImageDraw.Draw(road_mask)
+by_node, lm_bounds = {}, {}
+for (lm, mi), (P, Nn, U, I, _) in groups.items():
     P, Nn, U, I = np.vstack(P), np.vstack(Nn), np.vstack(U), np.vstack(I)
     if materials[mi]['name'] == 'road.1':
         P, I = cluster(P, I, 0.6)
@@ -219,8 +240,16 @@ for mi, (P, Nn, U, I, _) in groups.items():
         I = I[n[:, 1] > 0.5 * np.maximum(ln, 1e-12)]
         P = P.copy(); P[:, 1] = ground(P[:, 0], P[:, 2]) + 0.05
         Nn = np.tile([0.0, 1, 0], (len(P), 1)); U = np.c_[P[:, 0], P[:, 2]] / 6.0
-    prims.append(prim(P, Nn, U, I, mi))
-meshes.append({'name': 'town', 'primitives': prims}); nodes.append({'name': 'town', 'mesh': 0})
+        px = np.c_[-P[:, 0] / 500 * ROAD_RES, P[:, 2] / 500 * ROAD_RES]
+        for t in I: road_draw.polygon([tuple(px[k]) for k in t], fill=255)
+    if lm:
+        b = lm_bounds.setdefault(lm, [P.min(0), P.max(0)])
+        b[0] = np.minimum(b[0], P.min(0)); b[1] = np.maximum(b[1], P.max(0))
+    by_node.setdefault(lm, []).append(prim(P, Nn, U, I, mi))
+for lm, prims in by_node.items():
+    meshes.append({'name': lm or 'town', 'primitives': prims})
+    nodes.append({'name': 'lm:' + lm if lm else 'town', 'mesh': len(meshes) - 1})
+road_mask.filter(ImageFilter.GaussianBlur(2)).save(os.path.join(OUT, 'roadmask.png'), optimize=True)
 
 # tree prototypes (instanced in JS from world.json)
 tree_meshes = {'Broadleaf_Desktop': 'Broadleaf_Desktop_LOD1', 'Broadleaf_Mobile': 'Broadleaf_Mobile_LOD1', 'bush06': 'bush06'}
@@ -321,6 +350,8 @@ world_json = {
     'dust': [wpos(n) for n in ('DustStorm', 'DustStorm (1)', 'DustStorm (2)', 'DustStorm (3)', 'DustStorm (4)', 'DustStorm (5)', 'DustStorm (6)', 'DustStorm (7)')],
     'flag': {'pos': wpos('Plane', 'Cloth'), 'pole': wpos('Cylinder (2)')},
     'title': wpos('king-s-arms-tavern'),
+    'chimneys': chimneys,
+    'landmarks': {k: [v[0].round(2).tolist(), v[1].round(2).tolist()] for k, v in lm_bounds.items()},
     'start': wpos('Player'),
     'music': 'Old Guard Fife and Drum Corps: Boismortier, Concerto for Five Flutes No. 4, I. Adagio',
 }
@@ -338,6 +369,25 @@ for o in list(SA.objects.values()) + list(LVL.objects.values()):
         fn = wanted[t.m_Name]; im = t.image; im.thumbnail((1024, 1024))
         if fn.endswith('png'): im.save(os.path.join(OUT, fn), optimize=True)
         else: im.convert('RGB').save(os.path.join(OUT, fn), quality=85)
+
+# Ryan's photographs of the real surfaces, kept at full resolution for the
+# remastered materials (see make-textures.py).
+SRC = os.path.join(OUT, 'src'); os.makedirs(SRC, exist_ok=True)
+photos = {'brick.seemless.1': 'brick', 'DSC_0713': 'clapboard-grey', 'VC_Summer__2935': 'clapboard-brown',
+          'shingles01': 'shingles', 'roof_0097_02_preview': 'roof', 'DSC_0701': 'grass',
+          'wildtextures_white-stained-wooden-boards': 'boards', 'T19_Dark_Chocolate': 'fence-wood'}
+# Some names appear twice (the photo and its blurry parallax height map), so keep
+# whichever copy has the most fine detail.
+best = {}
+for o in SA.objects.values():
+    if o.type.name != 'Texture2D': continue
+    t = o.read()
+    if t.m_Name not in photos: continue
+    im = t.image.convert('RGB'); a = np.asarray(im.convert('L'), dtype=np.float64)
+    detail = np.abs(np.diff(a, axis=1)).mean() + np.abs(np.diff(a, axis=0)).mean()
+    if detail > best.get(t.m_Name, (-1, None))[0]: best[t.m_Name] = (detail, im)
+for n, (_, im) in best.items():
+    im.save(os.path.join(SRC, photos[n] + '.png'))
 
 # The magazine and Peyton Randolph House photos only exist on the 3D sign boards,
 # so cut them out of the sign textures for the info panels.

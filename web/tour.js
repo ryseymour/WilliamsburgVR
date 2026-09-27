@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import TOWN from './data/town.js';
 import MUSIC from './data/music.js';
 import { WORLD, ART } from './data/art.js';
+import { createRemaster } from './remaster.js';
 
 // The four stops, in the order the original playerspawner cycled through them
 // (Site1..Site4). Quotes are the ones printed on the in-game sign boards.
@@ -102,7 +103,7 @@ function loadImage(src) { return new Promise((res, rej) => { const i = new Image
 
 // ---------------------------------------------------------------- terrain
 const T = WORLD.terrain;
-let heights, hRes;
+let heights, hRes, terrainMesh;
 async function buildTerrain() {
   const img = await loadImage(ART.height);
   hRes = img.width;
@@ -147,6 +148,7 @@ async function buildTerrain() {
   const mesh = new THREE.Mesh(g, mat);
   mesh.receiveShadow = true;
   scene.add(mesh);
+  terrainMesh = mesh;
 }
 function heightAt(x, z) {
   if (!heights) return 0;
@@ -158,7 +160,7 @@ function heightAt(x, z) {
 }
 
 // ---------------------------------------------------------------- town
-let walkMeshes = [];
+let walkMeshes = [], townRoot, treeGroups = [];
 async function buildTown() {
   const loader = new GLTFLoader();
   const glb = await new Response(new Blob([b64buf(TOWN)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
@@ -181,10 +183,12 @@ async function buildTown() {
       if (m.transparent) { o.castShadow = false; m.depthWrite = false; }
     }
   });
+  // GLTFLoader strips ':' from node names, so 'tree:bush06' arrives as 'treebush06'
   for (const node of [...gltf.scene.children]) {
-    if (node.name.startsWith('tree:')) { protos[node.name.slice(5)] = node; gltf.scene.remove(node); }
+    if (/^tree/.test(node.name)) { protos[node.name.slice(4)] = node; gltf.scene.remove(node); }
   }
   scene.add(gltf.scene);
+  townRoot = gltf.scene;
   gltf.scene.updateMatrixWorld(true);
   walkMeshes = [];
   gltf.scene.traverse((o) => { if (o.isMesh && /road/.test(o.material.name)) walkMeshes.push(o); });
@@ -199,11 +203,12 @@ async function buildTown() {
     g.rotation.y = -t.r;
     g.scale.set(t.w, t.h, t.w);
     scene.add(g);
+    treeGroups.push(g);
   }
 }
 
 // ---------------------------------------------------------------- flag, smoke, dust
-let flag, flagBase;
+let flag, flagBase, flagParts = [];
 const FLAG_H = 1.5, MAST = 6.5;
 function buildFlag() {
   // The build's cloth flag hangs off a 2 m stub on the courthouse roof and its
@@ -217,6 +222,7 @@ function buildFlag() {
   ball.position.set(pole[0], base + MAST + 0.08, pole[2]);
   mast.castShadow = ball.castShadow = true;
   scene.add(mast, ball);
+  flagParts.push(mast, ball);
 
   const g = new THREE.PlaneGeometry(FLAG_H * 1.6, FLAG_H, 24, 12);
   g.translate(FLAG_H * 0.8 + 0.05, -FLAG_H / 2, 0);
@@ -244,7 +250,7 @@ const puffs = [];
 function buildSmoke() {
   const map = tex('smoke');
   const spawners = [
-    ...WORLD.smoke.map((p) => ({ p, rate: 0.35, size: 1.4, grow: 2.4, life: 7, alpha: 0.5, rise: 1.3, color: '#dedad3' })),
+    ...WORLD.smoke.map((p) => ({ p, chimney: true, rate: 0.35, size: 1.4, grow: 2.4, life: 7, alpha: 0.5, rise: 1.3, color: '#dedad3' })),
     ...WORLD.dust.map((p) => ({ p: [p[0], Math.min(p[1], 3), p[2]], rate: 0.12, size: 6, grow: 5, life: 12, alpha: 0.14, rise: 0.25, color: '#d8c7a3', drift: 1.4 })),
   ];
   for (const s of spawners) {
@@ -253,9 +259,10 @@ function buildSmoke() {
   }
   return spawners;
 }
-let smokeSpawners = [];
+let smokeSpawners = [], chimneySmoke = true;
 function tickSmoke(dt) {
   for (const s of smokeSpawners) {
+    if (s.chimney && !chimneySmoke) continue;
     s.acc += dt * s.rate;
     while (s.acc > 1) {
       s.acc -= 1;
@@ -345,11 +352,13 @@ function finish() {
 // ---------------------------------------------------------------- input
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  if (!started && e.key.toLowerCase() === 'v') { setEra(era === 'rm' ? '2018' : 'rm'); return; }
   if (!started) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); begin(); } return; }
   const k = e.key.toLowerCase();
   if ([' ', 'enter', 'n'].includes(k) && !e.repeat) { e.preventDefault(); onNext(); return; }
   if (k === 'p' || k === 'b') { prevStop(); return; }
   if (k === 'm') { toggleMusic(); return; }
+  if (k === 'v' && !e.repeat) { setEra(era === 'rm' ? '2018' : 'rm'); return; }
   if (k === 'escape') { hidePanel(); $('wb-done').classList.remove('on'); return; }
   if (k === 'i' && current >= 0) { $('wb-panel').classList.contains('on') ? hidePanel() : showPanel(current); return; }
   keys.add(k);
@@ -409,6 +418,19 @@ $('wb-again').addEventListener('click', () => { $('wb-done').classList.remove('o
 $('wb-roam').addEventListener('click', () => $('wb-done').classList.remove('on'));
 $('wb-sound').addEventListener('click', toggleMusic);
 $('wb-begin').addEventListener('click', begin);
+
+// ---------------------------------------------------------------- 2018 / remastered
+let rm = null, era = 'rm';
+try { if (localStorage.getItem('wb-era') === '2018') era = '2018'; } catch {}
+function setEra(e) {
+  era = e;
+  try { localStorage.setItem('wb-era', e); } catch {}
+  document.querySelectorAll('[data-era]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.era === e)));
+  if (!rm) return;
+  if (e === 'rm') rm.enable(); else rm.disable();
+}
+document.querySelectorAll('[data-era]').forEach((b) => b.addEventListener('click', () => setEra(b.dataset.era)));
+setEra(era);
 
 // ---------------------------------------------------------------- music
 const music = new Audio(MUSIC);
@@ -493,13 +515,15 @@ function frame() {
   sky.position.copy(camera.position);
   if (flag) waveFlag(t);
   tickSmoke(dt);
-  renderer.render(scene, camera);
+  if (rm) rm.update(dt, t);
+  if (rm && rm.on) rm.render(); else renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 function resize() {
   const w = root.clientWidth, h = root.clientHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
+  if (rm) rm.resize(w, h);
 }
 addEventListener('resize', resize);
 
@@ -515,6 +539,22 @@ addEventListener('resize', resize);
     await buildTown();
     buildFlag();
     smokeSpawners = buildSmoke();
+    step('Restoring the landmarks…');
+    try {
+      rm = await createRemaster({
+        scene, renderer, camera, WORLD, heightAt, sun, hemi, sky,
+        town: townRoot, terrain: terrainMesh, trees: treeGroups, flagParts,
+        landmarkNodes: ['lmchurch', 'lmcourthouse', 'lmmagazine', 'lmrandolph'].map((n) => townRoot.getObjectByName(n)).filter(Boolean),
+        roadMeshes: walkMeshes,
+        setOldSmoke: (on) => (chimneySmoke = on),
+      });
+      rm.resize(root.clientWidth, root.clientHeight);
+      setEra(era);
+    } catch (err) {
+      // the 2018 version still works on its own
+      console.error(err);
+      document.querySelectorAll('.era').forEach((el) => (el.hidden = true));
+    }
     renderDots();
     ready = true;
     $('wb-load').textContent = '';
@@ -527,4 +567,4 @@ addEventListener('resize', resize);
   requestAnimationFrame(frame);
 })();
 
-window.__wb = { scene, camera, player, goTo, STOPS, WORLD, get current() { return current; } };
+window.__wb = { scene, camera, player, goTo, STOPS, WORLD, setEra, get rm() { return rm; }, get current() { return current; } };
