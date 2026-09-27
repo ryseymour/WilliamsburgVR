@@ -544,7 +544,7 @@ addEventListener('resize', resize);
       rm = await createRemaster({
         scene, renderer, camera, WORLD, heightAt, sun, hemi, sky,
         town: townRoot, terrain: terrainMesh, trees: treeGroups, flagParts,
-        landmarkNodes: ['lmchurch', 'lmcourthouse', 'lmmagazine', 'lmrandolph'].map((n) => townRoot.getObjectByName(n)).filter(Boolean),
+        landmarkNodes: ['lmchurch', 'lmcourthouse', 'lmmagazine', 'lmrandolph', 'lmhouses'].map((n) => townRoot.getObjectByName(n)).filter(Boolean),
         roadMeshes: walkMeshes,
         setOldSmoke: (on) => (chimneySmoke = on),
       });

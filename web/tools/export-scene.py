@@ -151,6 +151,15 @@ def landmark(name, par, c):
         return 'randolph'
     return None
 
+# The ordinary houses go into a 'houses' node too, and their walls, roofs,
+# doors and chimneys are described in world.json so the remaster can rebuild them.
+import re
+HOUSE_PART = re.compile(r'^(med\.cabin|big\.cabin|Cabin1\.|cabin1\.|window\.frames|windowpanes\.bigcabin|door( \(\d+\))?$)')
+HOUSE_BODY = re.compile(r'^(med\.cabin( \(\d+\))?|Cabin1\.wall.*|big\.cabin\.wall)$')
+def house_part(name, par):
+    return bool(HOUSE_PART.match(name)) or bool(re.match(r'^(Shutters|bigbuildingsmallroof)', par))
+bodies, roofs, doors, windows, chim_pts = [], [], [], [], []
+
 skipped, chimneys = [], []
 for pid, o in LVL.objects.items():
     if o.type.name != 'MeshRenderer': continue
@@ -177,6 +186,15 @@ for pid, o in LVL.objects.items():
     lm = landmark(name, par, (lo + hi) / 2)
     if 'chimney' in name.lower() and not lm:
         chimneys.append([round(-(lo[0] + hi[0]) / 2, 2), round(float(hi[1]), 2), round((lo[2] + hi[2]) / 2, 2)])
+    if not lm and house_part(name, par):
+        lm = 'houses'
+        P3 = Vw.copy(); P3[:, 0] *= -1  # three.js coordinates
+        if HOUSE_BODY.match(name):
+            bodies.append((name, P3, [r.m_Materials[i].read().m_Name for i in range(len(subs)) if i < len(r.m_Materials) and r.m_Materials[i].path_id]))
+        elif 'roof' in name.lower(): roofs.append((P3.min(0), P3.max(0)))
+        elif name.startswith('door'): doors.append(P3.mean(0))
+        elif name.startswith('window.frames'): windows.append(((P3.min(0) + P3.max(0)) / 2, P3.max(0) - P3.min(0)))
+        elif 'chimney' in name.lower(): chim_pts.append(P3)
     for i, T in enumerate(subs):
         if i >= len(r.m_Materials) or not r.m_Materials[i].path_id: continue
         mi, uvx = material(r.m_Materials[i])
@@ -246,6 +264,39 @@ for (lm, mi), (P, Nn, U, I, _) in groups.items():
         b = lm_bounds.setdefault(lm, [P.min(0), P.max(0)])
         b[0] = np.minimum(b[0], P.min(0)); b[1] = np.maximum(b[1], P.max(0))
     by_node.setdefault(lm, []).append(prim(P, Nn, U, I, mi))
+# describe each house: footprint, ridge direction, eave height, colour, door side, chimneys
+def split_points(P, gap=2.5):
+    out = []
+    for p in P:
+        for c in out:
+            if abs(c[0][0] - p[0]) < gap and abs(c[0][2] - p[2]) < gap: c.append(p); break
+        else: out.append([p])
+    return [np.array(c) for c in out]
+chim_list = [c for P in chim_pts for c in split_points(P)]
+houses = []
+for name, P, mats in bodies:
+    lo, hi = P.min(0), P.max(0)
+    if hi[1] < lo[1] + 2: continue
+    top = P[P[:, 1] > hi[1] - 0.05]
+    ridge = 'x' if np.ptp(top[:, 0]) > np.ptp(top[:, 2]) else 'z'
+    over = [r for r in roofs if r[0][0] < hi[0] + 0.5 and r[1][0] > lo[0] - 0.5 and r[0][2] < hi[2] + 0.5 and r[1][2] > lo[2] - 0.5 and r[1][1] > lo[1]]
+    eave = min((r[0][1] for r in over), default=lo[1] + (hi[1] - lo[1]) * 0.55)
+    ridge_y = max((r[1][1] for r in over), default=hi[1])
+    near = lambda c, m=1.2: lo[0] - m < c[0] < hi[0] + m and lo[2] - m < c[2] < hi[2] + m
+    door = next((d for d in doors if near(d)), None)
+    side = None
+    if door is not None:
+        dists = {'+x': abs(door[0] - hi[0]), '-x': abs(door[0] - lo[0]), '+z': abs(door[2] - hi[2]), '-z': abs(door[2] - lo[2])}
+        side = min(dists, key=dists.get)
+    ch = [[round(float((c[:, 0].min() + c[:, 0].max()) / 2), 2), round(float((c[:, 2].min() + c[:, 2].max()) / 2), 2),
+           round(float(c[:, 1].max()), 2), round(float(np.ptp(c[:, 0])), 2), round(float(np.ptp(c[:, 2])), 2)] for c in chim_list if near(c.mean(0), 1.5)]
+    wins = [[round(float(w[0][1]), 2), round(float(w[1][1]), 2)] for w in windows if near(w[0], 0.6)]
+    houses.append({'name': name, 'box': [lo.round(2).tolist(), hi.round(2).tolist()], 'ridge': ridge,
+                   'eave': round(float(eave), 2), 'ridgeY': round(float(ridge_y), 2), 'mat': mats[0] if mats else 'Siding',
+                   'door': None if door is None else [round(float(door[0]), 2), round(float(door[2]), 2)], 'side': side,
+                   'chimneys': ch, 'windows': wins})
+print('houses:', len(houses))
+
 for lm, prims in by_node.items():
     meshes.append({'name': lm or 'town', 'primitives': prims})
     nodes.append({'name': 'lm:' + lm if lm else 'town', 'mesh': len(meshes) - 1})
@@ -351,7 +402,8 @@ world_json = {
     'flag': {'pos': wpos('Plane', 'Cloth'), 'pole': wpos('Cylinder (2)')},
     'title': wpos('king-s-arms-tavern'),
     'chimneys': chimneys,
-    'landmarks': {k: [v[0].round(2).tolist(), v[1].round(2).tolist()] for k, v in lm_bounds.items()},
+    'landmarks': {k: [v[0].round(2).tolist(), v[1].round(2).tolist()] for k, v in lm_bounds.items() if k != 'houses'},
+    'houses': houses,
     'start': wpos('Player'),
     'music': 'Old Guard Fife and Drum Corps: Boismortier, Concerto for Five Flutes No. 4, I. Adagio',
 }

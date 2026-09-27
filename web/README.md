@@ -48,13 +48,21 @@ at any moment, from the same spot.
   level and true to scale on every wall. Surfaces without a photo (the sandy
   oyster-shell streets, painted trim, weathered wood, tent canvas, gravestones) are
   generated from tileable noise.
-- **The four landmarks, rebuilt.** `tools/build-landmarks.py` models Bruton Parish
-  Church, the Courthouse, the Magazine and the Peyton Randolph House in Blender. They are
-  based on the photos on the tour's own sign boards, and they sit on the footprints of the
-  2018 models. They have
-  sash windows with muntins, shutters, gauged-brick arches, the church's three-stage tower,
-  belfry and spire, the courthouse's cupola and pedimented projection, the octagonal
-  magazine inside its wall, and the Randolph house's end chimneys and pedimented door.
+- **Every building, rebuilt.** `tools/build-landmarks.py` models the town in Blender.
+  The four landmarks follow the photos on the tour's own sign boards:
+  - the Courthouse, with its pediment cantilevered over the steps (no columns), a lunette
+    in the pediment, white shutters, twin ridge chimneys and a bell-domed cupola;
+  - Bruton Parish Church, with a three-stage brick tower, a white octagonal steeple and a
+    shingled spire;
+  - the octagonal Magazine inside its wall;
+  - the seven-bay, hip-roofed Peyton Randolph House.
+
+  The twenty ordinary houses are rebuilt on their 2018 footprints, facing the same way,
+  in the same colours and with chimneys at the same ends. `export-scene.py` records
+  those details in `world.json`. Walls have real openings, so the sash windows,
+  panelled doors and fanlights sit back in their reveals. Roofs are laid shingle by
+  shingle, and the eaves carry modillion and dentil cornices. There are open shutters,
+  dormers and corbelled chimney caps.
 - **Atmosphere.** A physically based sky with drifting clouds lights the scene through
   an environment map, so glass and metal reflect it. It also adds distance haze, a warm
   late-afternoon sun with sharper shadows that follow you, ambient occlusion, gentle bloom
@@ -71,7 +79,8 @@ pip install UnityPy pillow numpy bpy
 python3 web/tools/export-scene.py        # unpacks Build/, writes web/assets/
 npx @gltf-transform/cli quantize web/assets/town.glb web/assets/town.glb
 python3 web/tools/make-textures.py       # PBR sets for the remaster, web/assets/rm/
-python3 web/tools/build-landmarks.py     # Blender (bpy) models of the four landmarks
+python3 web/tools/build-landmarks.py     # Blender (bpy) models of the landmarks and houses
+npx @gltf-transform/cli quantize web/assets/landmarks.glb web/assets/landmarks.glb
 python3 web/tools/pack.py                # writes web/data/*.js (base64, gzip for the town)
 ```
 

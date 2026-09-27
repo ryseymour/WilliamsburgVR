@@ -20,7 +20,8 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RM, LANDMARKS } from './data/remaster.js';
+import { RM } from './data/remaster.js';
+import MODELS, { CHIMNEYS } from './data/models.js';
 
 const loader = new THREE.TextureLoader();
 const b64buf = (s) => { const bin = atob(s); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a.buffer; };
@@ -135,13 +136,19 @@ export async function createRemaster(ctx) {
     'Material.005': M.iron, 'black': M.dark,
     'No Name': M.canvas, 'grey.gravestone': M.stone,
   };
+  M.shutterWhite = triplanar({ tex: 'paint', scale: 1.5, tint: '#ece8de', roughness: 0.7, side: THREE.DoubleSide });
+  M.shutterRed = triplanar({ tex: 'paint', scale: 1.5, tint: '#5e231c', roughness: 0.6, side: THREE.DoubleSide });
+  M.clapRandolph = triplanar({ tex: 'clapboard', scale: 1.0, tint: '#6d3326', roughness: 0.85 });
   const LMAP = {
-    brick: M.brick, brick_rubbed: M.brickRubbed, clapboard_red: M.clapRed, shingle: M.shingle, trim: M.paint,
-    glass: M.glass, door: M.door, shutter: M.shutter, stone: M.stone, lead: M.lead, gilt: M.gilt, dark: M.dark,
+    brick: M.brick, brick_rubbed: M.brickRubbed, shingle: M.shingle, trim: M.paint,
+    glass: M.glass, door: M.door, door_white: M.paint, shutter: M.shutter, shutter_white: M.shutterWhite, shutter_red: M.shutterRed,
+    stone: M.stone, lead: M.lead, gilt: M.gilt, dark: M.dark,
+    clapboard_red: M.clapRandolph, clap_white: M.clapWhite, clap_red: M.clapRed, clap_blue: M.clapBlue,
+    clap_sage: M.clapSage, clap_brown: M.clapBrown, clap_ochre: M.clapOchre,
   };
 
   // ------------------------------------------------------------ landmarks
-  const glb = await new Response(new Blob([b64buf(LANDMARKS)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  const glb = await new Response(new Blob([b64buf(MODELS)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   const lm = (await new GLTFLoader().parseAsync(glb, '')).scene;
   lm.traverse((o) => {
     if (!o.isMesh) return;
@@ -254,7 +261,7 @@ export async function createRemaster(ctx) {
   const mctx = mc.getContext('2d'); mctx.drawImage(maskImg, 0, 0, 512, 512);
   const maskPx = mctx.getImageData(0, 0, 512, 512).data;
   const roadAt = (x, z) => { const u = Math.floor((-x / 500) * 511), v = Math.floor((z / 500) * 511); return u < 0 || v < 0 || u > 511 || v > 511 ? 0 : maskPx[(v * 512 + u) * 4] / 255; };
-  const lmBoxes = Object.values(WORLD.landmarks);
+  const lmBoxes = [...Object.values(WORLD.landmarks), ...WORLD.houses.map((h) => [[h.box[0][0] - 1, 0, h.box[0][2] - 1], [h.box[1][0] + 1, 0, h.box[1][2] + 1]])];
   const inBuilding = (x, z) => lmBoxes.some(([lo, hi]) => x > lo[0] - 0.4 && x < hi[0] + 0.4 && z > lo[2] - 0.4 && z < hi[2] + 0.4) && !(x > -137 && x < -115 && z > 253 && z < 274 && Math.hypot(x + 125.9, z - 263.6) > 5);
 
   const tuft = (() => {
@@ -356,10 +363,8 @@ export async function createRemaster(ctx) {
     }
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
-  const chimneys = [...WORLD.chimneys, ...WORLD.smoke];
-  // the rebuilt landmarks' chimneys
-  chimneys.push([-157.25, 11.6, 220.2], [-157.25, 11.6, 236.9]);
-  const uniq = []; chimneys.forEach((c) => { if (!uniq.some((u) => Math.hypot(u[0] - c[0], u[2] - c[2]) < 1)) uniq.push(c); });
+  // smoke from most of the rebuilt chimneys (not every hearth is lit)
+  const uniq = CHIMNEYS.filter((c, i) => i % 3 !== 2);
   const smokeGroup = new THREE.Group(); smokeGroup.visible = false; scene.add(smokeGroup);
   const puffs = [];
   const emitters = uniq.map((p, i) => ({ p, acc: Math.random(), rate: i % 3 === 0 ? 0.9 : 0.45 }));
