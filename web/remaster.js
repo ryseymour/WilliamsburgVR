@@ -96,7 +96,7 @@ export async function createRemaster(ctx) {
   }
 
   const M = {
-    brick: triplanar({ tex: 'brick', scale: 0.95, roughness: 1, normalScale: 1.2 }),
+    brick: triplanar({ tex: 'brick', scale: 0.95, tint: '#d99a86', roughness: 1, normalScale: 1.2 }),
     brickRubbed: triplanar({ tex: 'brick', scale: 0.95, tint: '#c98a70', roughness: 0.95 }),
     clapWhite: triplanar({ tex: 'clapboard', scale: 1.0, tint: '#f1ede4', roughness: 0.9 }),
     clapRed: triplanar({ tex: 'clapboard', scale: 1.0, tint: '#9a4a38', roughness: 0.9 }),     // Spanish brown
@@ -445,6 +445,14 @@ export async function createRemaster(ctx) {
     gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.1, samples: 12 });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
     composer.addPass(gtao);
+    // keep see-through things (clouds, smoke, motes) out of the occlusion pass
+    const gtaoRender = gtao.render.bind(gtao);
+    const skip = () => [clouds, smokeGroup, motes, birds, skyObj];
+    gtao.render = (...a) => {
+      const vis = skip().map((o) => o.visible);
+      skip().forEach((o) => (o.visible = false));
+      try { gtaoRender(...a); } finally { skip().forEach((o, i) => (o.visible = vis[i])); }
+    };
   }
   const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.22, 0.6, 0.92);
   composer.addPass(bloom);

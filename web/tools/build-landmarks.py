@@ -93,7 +93,7 @@ class Builder:
                 under = [(p[0], p[1] - thick, p[2]) for p in top[::-1]]
                 self.poly(under, 'trim')
                 self.poly([(xe, e - thick, Z0), (xe, e - thick, Z1), (xe, e, Z1), (xe, e, Z0)] if s > 0 else [(xe, e - thick, Z1), (xe, e - thick, Z0), (xe, e, Z0), (xe, e, Z1)], 'trim')
-            for zz, sgn in ((Z0, -1), (Z1, 1)):
+            for zz, sgn in ((Z0, -1), (Z1, 1)) if not end_m else ():
                 tri = [(X0, e, zz), (X1, e, zz), (xm, ridge, zz)]
                 self.poly(tri if sgn > 0 else tri[::-1], 'trim')
             if end_m:
@@ -108,7 +108,7 @@ class Builder:
                 top = [(X1, e, ze), (X0, e, ze), (X0, ridge, zm), (X1, ridge, zm)] if s > 0 else [(X0, e, ze), (X1, e, ze), (X1, ridge, zm), (X0, ridge, zm)]
                 self.poly(top, m)
                 self.poly([(p[0], p[1] - thick, p[2]) for p in top[::-1]], 'trim')
-            for xx, sgn in ((X0, -1), (X1, 1)):
+            for xx, sgn in ((X0, -1), (X1, 1)) if not end_m else ():
                 tri = [(xx, e, Z1), (xx, e, Z0), (xx, ridge, zm)]
                 self.poly(tri if sgn > 0 else tri[::-1], 'trim')
             if end_m:
@@ -164,14 +164,14 @@ class Builder:
 
     def sash_window(self, F, u, v, w, h, cols=3, rows=4, arch=False, shutters=False, lintel='brick'):
         """Sash window centred at u, sill at v: recessed glass, white frame, muntins, sill."""
-        fw = 0.09; rec = -0.12
+        fw = 0.09; rec = 0.012
         arc_h = w / 2 if arch else 0
         body = h - arc_h
         # dark reveal + glass
         self.quad_on(F, u - w / 2, u + w / 2, v, v + body, rec - 0.05, 'dark')
         self.quad_on(F, u - w / 2 + fw, u + w / 2 - fw, v + fw, v + body, rec, 'glass')
         for s in (-1, 1):  # jambs
-            self.slab_on(F, u + s * w / 2 - (fw if s > 0 else 0), u + s * w / 2 + (0 if s > 0 else fw), v, v + body, rec, 0.02, 'trim')
+            self.slab_on(F, u + s * w / 2 - (fw if s > 0 else 0), u + s * w / 2 + (0 if s > 0 else fw), v, v + body, rec, 0.05, 'trim')
         self.slab_on(F, u - w / 2 - 0.06, u + w / 2 + 0.06, v - 0.08, v, -0.02, 0.1, 'stone' if lintel == 'brick' else 'trim')  # sill
         # meeting rail and muntins
         self.slab_on(F, u - w / 2, u + w / 2, v + body / 2 - 0.03, v + body / 2 + 0.03, rec, rec + 0.05, 'trim')
@@ -188,7 +188,7 @@ class Builder:
             for k in range(segs):
                 self.poly([F(*ri[k + 1], rec), F(*ri[k], rec), F(u, cy, rec)], 'glass')
                 a, b, c2, d2 = ring[k + 1], ring[k], ri[k], ri[k + 1]
-                self.poly([F(*b, 0.02), F(*a, 0.02), F(*d2, 0.02), F(*c2, 0.02)], 'trim')
+                self.poly([F(*b, 0.03), F(*a, 0.03), F(*d2, 0.03), F(*c2, 0.03)], 'trim')
                 self.poly([F(*b, rec - 0.05), F(*a, rec - 0.05), F(*a, 0.0), F(*b, 0.0)], 'dark')
                 # gauged-brick arch head
                 ro = [(u + (r + 0.28) * math.cos(math.pi * kk / segs), cy + (r + 0.28) * math.sin(math.pi * kk / segs)) for kk in (k, k + 1)]
@@ -212,7 +212,7 @@ class Builder:
                     self.slab_on(F, min(x0, x1) + 0.07, max(x0, x1) - 0.07, yy0, yy1, 0.08, 0.1, 'shutter')
 
     def door(self, F, u, v, w, h, arch=False, pediment=False, transom=True):
-        rec = -0.18
+        rec = 0.012
         body = h - (w / 2 if arch else 0)
         self.quad_on(F, u - w / 2, u + w / 2, v, v + body, rec, 'door')
         for i in range(2):  # six-panel door, two leaves
