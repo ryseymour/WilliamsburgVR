@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Williamsburg Tour</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+:root {
+  --paper: #f3ead8; --paper-2: #e8dcc2; --ink: #2b2118; --ink-2: #5d4c3a;
+  --oxblood: #7a2621; --oxblood-2: #5e1b17; --gold: #b8913f; --line: rgba(60, 40, 20, .22);
+  --glass: rgba(29, 22, 16, .62); --glass-ink: #f6eedd;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #2a231c; --paper-2: #342b22; --ink: #f1e6d0; --ink-2: #c9b89b;
+    --oxblood: #b8463d; --oxblood-2: #99362f; --gold: #d6b066; --line: rgba(240, 220, 190, .18);
+    --glass: rgba(14, 11, 8, .7); --glass-ink: #f6eedd; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #2a231c; --paper-2: #342b22; --ink: #f1e6d0; --ink-2: #c9b89b;
+  --oxblood: #b8463d; --oxblood-2: #99362f; --gold: #d6b066; --line: rgba(240, 220, 190, .18);
+  --glass: rgba(14, 11, 8, .7); --glass-ink: #f6eedd; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #1c1612; overflow: hidden; }
+body { font-family: 'Source Serif 4', Georgia, serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+#wb { position: fixed; inset: 0; overflow: hidden; user-select: none; -webkit-user-select: none; }
+#wb-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#wb-canvas:active { cursor: grabbing; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* title card */
+#wb-title { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at center, rgba(20,14,10,.35), rgba(20,14,10,.8)); transition: opacity .7s, visibility .7s; z-index: 5; }
+#wb-title.gone { opacity: 0; visibility: hidden; }
+.card { width: min(560px, 100%); background: var(--paper); border-radius: 6px; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px var(--line); }
+.card img { display: block; width: 100%; aspect-ratio: 902 / 520; object-fit: cover; object-position: top; background: #cfc6b4; }
+.card .body { padding: 20px 24px 22px; }
+.eyebrow { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--oxblood); font-weight: 600; margin: 0 0 6px; }
+h1 { font-family: 'IM Fell English', Georgia, serif; font-weight: 400; font-size: clamp(30px, 6vw, 40px); line-height: 1.05; margin: 0 0 10px; }
+.lede { margin: 0 0 16px; color: var(--ink-2); font-size: 15.5px; line-height: 1.5; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btn { border: 0; border-radius: 4px; padding: 11px 18px; font-weight: 600; font-size: 15px; background: var(--oxblood); color: #fff7ea; }
+.btn:hover:not(:disabled) { background: var(--oxblood-2); }
+.btn:disabled { opacity: .55; cursor: progress; }
+.btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.btn.ghost:hover { background: var(--paper-2); }
+#wb-load { font-size: 13.5px; color: var(--ink-2); font-style: italic; }
+.keys { margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+kbd { font-family: inherit; font-size: 12px; padding: 1px 6px; border-radius: 3px; background: var(--paper-2); box-shadow: inset 0 -1px 0 var(--line); color: var(--ink); }
+
+/* top bar */
+.hud { position: absolute; left: 0; right: 0; top: 0; padding: 12px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  pointer-events: none; opacity: 0; transition: opacity .6s; z-index: 3; }
+#wb.touring .hud { opacity: 1; }
+.hud > * { pointer-events: auto; }
+.pill { display: flex; align-items: center; gap: 10px; background: var(--glass); color: var(--glass-ink); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 13.5px; }
+.pill b { font-family: 'IM Fell English', Georgia, serif; font-weight: 400; font-size: 17px; }
+#wb-count { opacity: .8; white-space: nowrap; }
+#wb-dots { display: flex; gap: 6px; }
+.dot { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid rgba(246,238,221,.55); background: transparent; color: var(--glass-ink); font-size: 12.5px; font-weight: 600; padding: 0; display: grid; place-items: center; }
+.dot.seen { background: rgba(184,145,63,.35); border-color: var(--gold); }
+.dot.here { background: var(--oxblood); border-color: #f0c9a0; }
+.tool { background: var(--glass); color: var(--glass-ink); border: 0; border-radius: 999px; padding: 8px 14px; font-size: 13.5px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.tool[aria-pressed="false"] { opacity: .7; }
+.tools { display: flex; gap: 8px; }
+
+/* info panel, like the original's Canvas Info1..Info4 */
+#wb-panel { position: absolute; right: 16px; bottom: 16px; width: min(400px, calc(100% - 32px)); max-height: calc(100% - 90px); overflow: auto;
+  background: var(--paper); border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,.45), 0 0 0 1px var(--line);
+  transform: translateY(16px); opacity: 0; visibility: hidden; transition: transform .45s cubic-bezier(.2,.8,.2,1), opacity .35s, visibility .35s; z-index: 4; }
+#wb-panel.on { transform: none; opacity: 1; visibility: visible; }
+#wb-panel img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; filter: sepia(.25) contrast(1.02); background: #cfc6b4; }
+#wb-panel .body { padding: 16px 18px 18px; }
+#wb-panel h2 { font-family: 'IM Fell English', Georgia, serif; font-weight: 400; font-size: 27px; line-height: 1.1; margin: 0 0 2px; }
+#wb-psub { font-size: 12.5px; color: var(--oxblood); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; margin: 0 0 10px; }
+#wb-ptext { font-size: 14.5px; line-height: 1.55; margin: 0 0 6px; color: var(--ink); }
+#wb-pcredit { font-size: 12.5px; color: var(--ink-2); font-style: italic; margin: 0 0 14px; }
+#wb-pcredit::before { content: '— '; }
+#wb-close { position: absolute; z-index: 2; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(20,14,10,.55); color: #fff; font-size: 18px; line-height: 1; }
+
+/* touch controls */
+#wb-stick { position: absolute; left: 22px; bottom: 22px; width: 110px; height: 110px; border-radius: 50%; background: rgba(20,14,10,.28);
+  box-shadow: inset 0 0 0 1.5px rgba(246,238,221,.4); display: none; place-items: center; touch-action: none; z-index: 3; }
+#wb-stick i { width: 48px; height: 48px; border-radius: 50%; background: rgba(246,238,221,.75); display: block; transition: transform .05s; }
+#wb-nextfab { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: none; z-index: 3; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+@media (pointer: coarse) {
+  #wb.touring #wb-stick { display: grid; }
+  #wb.touring #wb-nextfab { display: block; }
+  #wb.touring #wb-panel.on ~ #wb-nextfab { display: none; }
+  .keys { display: none; }
+}
+.hint { position: absolute; left: 16px; bottom: 16px; font-size: 12.5px; color: var(--glass-ink); background: var(--glass); padding: 8px 12px; border-radius: 6px;
+  opacity: 0; transition: opacity .6s; pointer-events: none; z-index: 2; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); max-width: calc(100% - 450px); }
+#wb.touring .hint { opacity: 1; }
+@media (pointer: coarse), (max-width: 760px) { .hint { display: none; } }
+
+#wb-fade { position: absolute; inset: 0; background: #120d0a; opacity: 0; pointer-events: none; transition: opacity .4s; z-index: 4; }
+#wb-fade.on { opacity: 1; }
+
+#wb-done { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(20,14,10,.55); z-index: 6;
+  opacity: 0; visibility: hidden; transition: opacity .5s, visibility .5s; }
+#wb-done.on { opacity: 1; visibility: visible; }
+#wb-done .card { width: min(440px, 100%); text-align: center; }
+#wb-done .body { padding: 28px 26px 24px; }
+#wb-done .row { justify-content: center; }
+.seal { width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 50%; background: var(--oxblood); color: #f7e7c7; display: grid; place-items: center;
+  font-family: 'IM Fell English', Georgia, serif; font-size: 26px; box-shadow: 0 0 0 4px var(--paper), 0 0 0 5px var(--oxblood); }
+
+@media (max-width: 560px) {
+  .hud { padding: 10px; flex-wrap: wrap; }
+  .pill b { display: none; }
+  #wb-count { display: none; }
+  #wb-panel { right: 16px; left: 16px; bottom: 16px; width: auto; max-height: 58%; }
+  #wb-panel img { aspect-ratio: 21 / 9; }
+  #wb-panel h2 { font-size: 23px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="wb">
+  <canvas id="wb-canvas" aria-label="3D view of colonial Williamsburg"></canvas>
+
+  <div class="hud">
+    <div class="pill"><b>Colonial Williamsburg</b><span id="wb-count"></span><div id="wb-dots"></div></div>
+    <div class="tools">
+      <button class="tool" id="wb-info" title="Show the sign for this stop (I)">About this stop</button>
+      <button class="tool" id="wb-sound" aria-pressed="true" title="Fife and drum music (M)">Music on</button>
+    </div>
+  </div>
+
+  <div class="hint">Drag to look · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk · <kbd>Space</kbd> next stop</div>
+
+  <div id="wb-panel" role="dialog" aria-labelledby="wb-ptitle">
+    <button id="wb-close" aria-label="Close">×</button>
+    <img id="wb-photo" alt="">
+    <div class="body">
+      <h2 id="wb-ptitle"></h2>
+      <p id="wb-psub"></p>
+      <p id="wb-ptext"></p>
+      <p id="wb-pcredit"></p>
+      <div class="row"><button class="btn" id="wb-next">Next stop</button></div>
+    </div>
+  </div>
+
+  <div id="wb-stick" aria-hidden="true"><i></i></div>
+  <button class="btn" id="wb-nextfab">Next stop</button>
+
+  <div id="wb-fade"></div>
+
+  <div id="wb-title">
+    <div class="card">
+      <img id="wb-titleimg" alt="The Fife and Drum Corps in Colonial Williamsburg">
+      <div class="body">
+        <p class="eyebrow">WilliamsburgVR · 2018</p>
+        <h1>A Tour of Colonial Williamsburg</h1>
+        <p class="lede">Walk the streets of the colonial capital and stop at four landmarks: the church, the courthouse, the magazine and the Randolph house, to the Old Guard's fifes and drums.</p>
+        <div class="row">
+          <button class="btn" id="wb-begin" disabled>Begin the tour</button>
+          <span id="wb-load">Loading…</span>
+        </div>
+        <p class="keys">The original asked you to <i>tap the headset to jump to new locations</i>. Here, press <kbd>Space</kbd> or <b>Next stop</b> to jump, drag to look around, and walk with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (hold <kbd>Shift</kbd> to hurry).</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="wb-done" role="dialog" aria-labelledby="wb-dtitle">
+    <div class="card"><div class="body">
+      <div class="seal">W</div>
+      <p class="eyebrow">Tour complete</p>
+      <h1 id="wb-dtitle" style="font-size:30px">You've seen all four stops</h1>
+      <p class="lede">Bruton Parish Church, the Courthouse, the Magazine and the Peyton Randolph House. Stay a while and wander, or start again from the church.</p>
+      <div class="row"><button class="btn" id="wb-again">Tour again</button><button class="btn ghost" id="wb-roam">Keep wandering</button></div>
+    </div></div>
+  </div>
+</div>
+<script type="module" src="./tour.js"></script>
+</body>
+</html>
